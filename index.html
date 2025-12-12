@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>临沂市公立医院医疗服务质量评价计算器（增强版）</title>
+
+    <!-- 引入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 引入 xlsx.full.min.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- 引入 jsPDF 和 autotable -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.20/jspdf.plugin.autotable.min.js"></script>
+    <!-- 引入 LZString 压缩库（用于URL传输大数据） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+
+    <style>
+        body { 
+            font-family: 'Microsoft YaHei', sans-serif; 
+            margin: 20px; 
+            background: #f4f6f9; 
+            color: #333;
+        }
+        h1 { 
+            color: #1a5fb4; 
+            text-align: center; 
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 1.1em;
+            margin-top: 5px;
+        }
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 10px; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1); 
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 20px 0; 
+            font-size: 0.9em;
+        }
+        th, td { 
+            border: 1px solid #ccc; 
+            padding: 8px; 
+            text-align: center; 
+        }
+        th { 
+            background-color: #e6f0ff; 
+            color: #1a5fb4;
+        }
+        input, select { 
+            width: 90%; 
+            text-align: center; 
+            padding: 5px; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+        }
+        button { 
+            padding: 10px 15px; 
+            background: #1a5fb4; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            margin: 5px; 
+            font-size: 0.95em;
+        }
+        button:hover { background: #0d47a1; }
+        button.success { background: #28a745; }
+        button.export { background: #fd7e14; }
+        button.share { background: #6f42c1; }
+        .chart-container { height: 500px; margin: 30px 0; }
+        .instructions { 
+            background: #fff3cd; 
+            padding: 15px; 
+            border: 1px solid #ffeaa7; 
+            border-radius: 5px; 
+            font-size: 0.9em; 
+            margin: 20px 0;
+        }
+        .upload-area {
+            border: 3px dashed #1a5fb4;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            background: #e6f0ff;
+            margin: 20px 0;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            color: #1a5fb4;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #888;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🏥 临沂市公立医院医疗服务质量评价计算器（增强版）</h1>
+    <p class="subtitle">支持14项核心指标 | TOPSIS+熵权法 | di⁺/di⁻/Ci完整输出 | Excel上传+PDF导出</p>
+
+    <div class="instructions">
+        <strong>📌 使用说明：</strong>
+        <ol>
+            <li><strong>手动填写</strong>：直接在表格中修改医院和指标值</li>
+            <li><strong>Excel上传</strong>：点击【选择文件】上传标准格式数据</li>
+            <li>点击【🚀 自动计算】进行分析</li>
+            <li>查看排名、柱状图与雷达图</li>
+            <li>点击【📤 导出PDF报告】或【🔗 生成分享链接】共享结果</li>
+        </ol>
+    </div>
+
+    <!-- 文件上传区 -->
+    <div class="upload-area">
+        <p><strong>📁 第一步：上传Excel文件（可选）</strong></p>
+        <input type="file" id="excelFile" accept=".xlsx, .xls" style="display:none;" />
+        <button onclick="document.getElementById('excelFile').click()">📎 选择Excel文件</button>
+        <button class="success" onclick="readExcelData()">✅ 从Excel导入</button>
+        <div class="loading" id="loading">正在解析Excel，请稍候...</div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <button onclick="addHospital()">➕ 添加医院</button>
+    <button onclick="removeHospital()">❌ 删除最后一行</button>
+    <button onclick="calculateTOPSIS()" style="background:#d32f2f">🚀 自动计算</button>
+    <button onclick="exportPDF()" class="export">📤 导出PDF报告</button>
+    <button onclick="exportToUrl()" class="share">🔗 生成分享链接</button>
+
+    <!-- 数据输入表 -->
+    <table id="inputTable">
+        <thead>
+            <tr>
+                <th>医院名称</th>
+                <th>门急诊人次<br>(↑)</th>
+                <th>出院患者人次<br>(↑)</th>
+                <th>门诊收入(万元)<br>(↑)</th>
+                <th>住院收入(万元)<br>(↑)</th>
+                <th>手术人次<br>(↑)</th>
+                <th>手术占比<br>(↑)</th>
+                <th>平均住院日<br>(↓)</th>
+                <th>药占比<br>(↓)</th>
+                <th>耗占比<br>(↓)</th>
+                <th>医疗服务收入占比<br>(↑)</th>
+                <th>I类切口感染率(%)<br>(↓)</th>
+                <th>DDDs<br>(↓)</th>
+                <th>门诊基药占比(%)<br>(↑)</th>
+                <th>住院基药使用率(%)<br>(↑)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td contenteditable="true">市人民医院</td>
+                <td contenteditable="true">380000</td>
+                <td contenteditable="true">28500</td>
+                <td contenteditable="true">18500</td>
+                <td contenteditable="true">42000</td>
+                <td contenteditable="true">12800</td>
+                <td contenteditable="true">0.45</td>
+                <td contenteditable="true">8.2</td>
+                <td contenteditable="true">28.0</td>
+                <td contenteditable="true">19.0</td>
+                <td contenteditable="true">36.0</td>
+                <td contenteditable="true">0.3</td>
+                <td contenteditable="true">380</td>
+                <td contenteditable="true">65.0</td>
+                <td contenteditable="true">70.0</td>
+            </tr>
+            <tr>
+                <td contenteditable="true">市中医院</td>
+                <td contenteditable="true">295000</td>
+                <td contenteditable="true">19800</td>
+                <td contenteditable="true">15200</td>
+                <td contenteditable="true">31000</td>
+                <td contenteditable="true">5600</td>
+                <td contenteditable="true">0.28</td>
+                <td contenteditable="true">9.1</td>
+                <td contenteditable="true">25.0</td>
+                <td contenteditable="true">16.0</td>
+                <td contenteditable="true">39.0</td>
+                <td contenteditable="true">0.2</td>
+                <td contenteditable="true">320</td>
+                <td contenteditable="true">72.0</td>
+                <td contenteditable="true">75.0</td>
+            </tr>
+            <tr>
+                <td contenteditable="true">县中心医院</td>
+                <td contenteditable="true">220000</td>
+                <td contenteditable="true">16500</td>
+                <td contenteditable="true">11800</td>
+                <td contenteditable="true">28500</td>
+                <td contenteditable="true">7200</td>
+                <td contenteditable="true">0.44</td>
+                <td contenteditable="true">10.5</td>
+                <td contenteditable="true">32.0</td>
+                <td contenteditable="true">23.0</td>
+                <td contenteditable="true">31.0</td>
+                <td contenteditable="true">0.6</td>
+                <td contenteditable="true">450</td>
+                <td contenteditable="true">60.0</td>
+                <td contenteditable="true">68.0</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- 结果输出 -->
+    <h2>📊 TOPSIS综合评价结果</h2>
+    <table id="resultTable">
+        <thead>
+            <tr>
+                <th>医院名称</th>
+                <th>距最优解距离 (di⁺)</th>
+                <th>距最劣解距离 (di⁻)</th>
+                <th>相对贴近度 (Ci)</th>
+                <th>排名</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <!-- 图表区域 -->
+    <h2>📈 综合得分柱状图</h2>
+    <div class="chart-container">
+        <canvas id="barChart"></canvas>
+    </div>
+
+    <h2>🔍 多维能力雷达图（Top 3医院）</h2>
+    <div class="chart-container">
+        <canvas id="radarChart"></canvas>
+    </div>
+
+    <footer>
+        © 2025 临沂市医疗质量分析工具 | 支持离线使用 | 数据永不上传服务器
+    </footer>
+</div>
+
+<script>
+// =======================
+// 全局变量
+// =======================
+let barChart = null;
+let radarChart = null;
+let resultData = [];
+
+// 所有字段名（用于匹配Excel）
+const fieldLabels = [
+    'mzrs', 'cyrs', 'mj_income', 'zy_income',
+    'ssrs', 'ssbl', 'avg_los', 'drug_ratio',
+    'consumable_ratio', 'service_income_ratio',
+    'infection_rate', 'ddds', 'op_basic_drug', 'ip_basic_drug'
+];
+
+// 指标方向：true=越高越好（↑），false=越低越好（↓）
+const isBenefit = [
+    true,   // 门急诊人次 ↑
+    true,   // 出院人次 ↑
+    true,   // 门诊收入 ↑
+    true,   // 住院收入 ↑
+    true,   // 手术人次 ↑
+    true,   // 手术占比 ↑
+    false,  // 平均住院日 ↓
+    false,  // 药占比 ↓
+    false,  // 耗占比 ↓
+    true,   // 医疗服务收入占比 ↑
+    false,  // I类切口感染率 ↓
+    false,  // DDDs ↓
+    true,   // 门诊基药占比 ↑
+    true    // 住院基药使用率 ↑
+];
+
+// =======================
+// 添加医院
+// =======================
+function addHospital() {
+    const tbody = document.querySelector("#inputTable tbody");
+    const newRow = document.createElement("tr");
+    newRow.innerHTML = `
+        <td contenteditable="true">新医院${tbody.children.length}</td>
+        <td contenteditable="true">200000</td>
+        <td contenteditable="true">15000</td>
+        <td contenteditable="true">10000</td>
+        <td contenteditable="true">25000</td>
+        <td contenteditable="true">6000</td>
+        <td contenteditable="true">0.30</td>
+        <td contenteditable="true">9.5</td>
+        <td contenteditable="true">30.0</td>
+        <td contenteditable="true">20.0</td>
+        <td contenteditable="true">33.0</td>
+        <td contenteditable="true">0.4</td>
+        <td contenteditable="true">400</td>
+        <td contenteditable="true">65.0</td>
+        <td contenteditable="true">70.0</td>
+    `;
+    tbody.appendChild(newRow);
+}
+
+// =======================
+// 删除医院
+// =======================
+function removeHospital() {
+    const tbody = document.querySelector("#inputTable tbody");
+    if (tbody.children.length > 1) {
+        tbody.removeChild(tbody.lastChild);
+    } else {
+        alert("至少保留一家医院！");
+    }
+}
+
+// =======================
+// 读取Excel并填充数据
+// =======================
+function readExcelData() {
+    const fileInput = document.getElementById('excelFile');
+    if (!fileInput.files.length) {
+        alert("请先选择一个Excel文件！");
+        return;
+    }
+
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+    const loading = document.getElementById('loading');
+    loading.style.display = 'block';
+
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const json = XLSX.utils.sheet_to_json(worksheet);
+
+            if (json.length === 0) {
+                alert("未读取到有效数据！");
+                loading.style.display = 'none';
+                return;
+            }
+
+            const tbody = document.querySelector("#inputTable tbody");
+            tbody.innerHTML = "";
+
+            json.forEach(row => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td contenteditable="true">${row['医院'] || '未知医院'}</td>
+                    <td contenteditable="true">${row['门急诊人次'] || ''}</td>
+                    <td contenteditable="true">${row['出院患者人次'] || ''}</td>
+                    <td contenteditable="true">${row['门诊收入(万元)'] || ''}</td>
+                    <td contenteditable="true">${row['住院收入(万元)'] || ''}</td>
+                    <td contenteditable="true">${row['手术人次'] || ''}</td>
+                    <td contenteditable="true">${row['手术占比'] || ''}</td>
+                    <td contenteditable="true">${row['平均住院日'] || ''}</td>
+                    <td contenteditable="true">${row['药占比'] || ''}</td>
+                    <td contenteditable="true">${row['耗占比'] || ''}</td>
+                    <td contenteditable="true">${row['医疗服务收入占比'] || ''}</td>
+                    <td contenteditable="true">${row['I类切口感染率(%)'] || ''}</td>
+                    <td contenteditable="true">${row['DDDs'] || ''}</td>
+                    <td contenteditable="true">${row['门诊基药占比(%)'] || ''}</td>
+                    <td contenteditable="true">${row['住院基药使用率(%)'] || ''}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            loading.style.display = 'none';
+            alert(`✅ 成功导入 ${json.length} 家医院数据！`);
+
+        } catch (err) {
+            loading.style.display = 'none';
+            alert("❌ 解析失败：" + err.message);
+        }
+    };
+
+    reader.readAsArrayBuffer(file);
+}
+
+// =======================
+// 执行TOPSIS分析
+// =======================
+function calculateTOPSIS() {
+    const table = document.getElementById("inputTable");
+    const data = [];
+
+    for (let i = 1; i < table.rows.length; i++) {
+        const row = table.rows[i];
+        const rowData = [row.cells[0].textContent.trim()];
+        
+        for (let j = 1; j < row.cells.length; j++) {
+            let val = parseFloat(row.cells[j].textContent.trim());
+            if (isNaN(val)) {
+                alert(`第${i+1}行，“${row.cells[0].textContent}”的第${j}列数据无效，请检查！`);
+                return;
+            }
+            rowData.push(val);
+        }
+        data.push(rowData);
+    }
+
+    // 提取数值矩阵 X
+    const X = data.map(row => row.slice(1).map(x => +x));
+    const hospitals = data.map(row => row[0]);
+    const n = X.length;
+    const m = X[0].length;
+
+    // 1. 向量标准化 R_ij = x_ij / sqrt(sum(x_ij^2))
+    const norms = Array(m).fill(0);
+    for (let j = 0; j < m; j++) {
+        for (let i = 0; i < n; i++) {
+            norms[j] += X[i][j] ** 2;
+        }
+        norms[j] = Math.sqrt(norms[j]);
+    }
+    const R = X.map(row => row.map((val, j) => val / (norms[j] + 1e-8)));
+
+    // 2. 熵权法赋权
+    function entropyWeight(matrix) {
+        const eps = 1e-8;
+        const P = matrix[0].map((_, j) => matrix.map(row => row[j]));
+        const e = P.map(col => {
+            const sum = col.reduce((a,b) => a+b, 0);
+            const p = col.map(v => (v + eps) / (sum + eps));
+            return -p.reduce((sum_p, pi) => sum_p + pi * Math.log(pi), 0) / Math.log(col.length);
+        });
+        const g = e.map(ej => 1 - ej);
+        const sumG = g.reduce((a,b) => a+b, 0);
+        return g.map(w => w / sumG);
+    }
+    const weights = entropyWeight(R);
+
+    // 3. 加权标准化矩阵 V
+    const V = R.map(row => row.map((val, j) => val * weights[j]));
+
+    // 4. 正负理想解 A+, A-
+    const A_plus = V[0].map((_, j) =>
+        isBenefit[j] ? Math.max(...V.map(r => r[j])) : Math.min(...V.map(r => r[j]))
+    );
+    const A_minus = V[0].map((_, j) =>
+        isBenefit[j] ? Math.min(...V.map(r => r[j])) : Math.max(...V.map(r => r[j]))
+    );
+
+    // 5. 欧氏距离 di+, di-
+    function distance(row, point) {
+        return Math.sqrt(row.reduce((sum, val, j) => sum + (val - point[j])**2, 0));
+    }
+    const d_plus = V.map(row => distance(row, A_plus));
+    const d_minus = V.map(row => distance(row, A_minus));
+
+    // 6. 相对接近度 Ci
+    const Ci = d_minus.map((d_min, i) => d_min / (d_min + d_plus[i] + 1e-8));
+
+    // 7. 排序
+    resultData = hospitals.map((h, i) => ({
+        hospital: h,
+        di_plus: d_plus[i],
+        di_minus: d_minus[i],
+        ci: Ci[i]
+    })).sort((a, b) => b.ci - a.ci);
+
+    resultData.forEach((r, i) => r.rank = i + 1);
+
+    // 8. 输出结果
+    displayResults();
+    drawCharts();
+}
+
+// =======================
+// 显示结果表格
+// =======================
+function displayResults() {
+    const tbody = document.querySelector("#resultTable tbody");
+    tbody.innerHTML = "";
+    resultData.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${r.hospital}</td>
+            <td>${r.di_plus.toFixed(4)}</td>
+            <td>${r.di_minus.toFixed(4)}</td>
+            <td><strong>${r.ci.toFixed(3)}</strong></td>
+            <td><strong>${r.rank}</strong></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// =======================
+// 绘制图表
+// =======================
+function drawCharts() {
+    if (barChart) barChart.destroy();
+    if (radarChart) radarChart.destroy();
+
+    // 柱状图
+    const ctxBar = document.getElementById("barChart").getContext("2d");
+    barChart = new Chart(ctxBar, {
+        type: 'bar',
+        data: {
+            labels: resultData.map(r => r.hospital),
+            datasets: [{
+                label: '相对贴近度 (Ci)',
+                data: resultData.map(r => r.ci),
+                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true, max: 1.0 } },
+            plugins: { legend: { position: 'top' } }
+        }
+    });
+
+    // 雷达图（Top 3）
+    const top3 = resultData.slice(0, 3);
+    const ctxRadar = document.getElementById("radarChart").getContext("2d");
+    radarChart = new Chart(ctxRadar, {
+        type: 'radar',
+        data: {
+            labels: ['服务能力', '手术能力', '效率', '用药安全', '合理用药'],
+            datasets: top3.map((r, i) => {
+                const row = Array.from(document.querySelectorAll("#inputTable tbody tr"))
+                                .find(tr => tr.cells[0].textContent.trim() === r.hospital);
+                const values = row ? Array.from(row.cells).slice(1).map(td => parseFloat(td.textContent)) : Array(14).fill(0);
+                return {
+                    label: r.hospital,
+                    data: [
+                        (values[0] + values[1]) / 100000,     // 服务量
+                        values[5],                           // 手术占比
+                        1 / values[6],                       // 效率
+                        1 / values[11],                      // DDDs
+                        (values[12] + values[13]) / 2       // 基药使用
+                    ].map(x => Math.max(0.1, Math.min(1, x / 10))), // 归一化
+                    backgroundColor: [`rgba(255,99,132,0.2)`,`rgba(54,162,235,0.2)`,`rgba(255,205,86,0.2)`][i],
+                    borderColor: [`rgba(255,99,132,1)`,`rgba(54,162,235,1)`,`rgba(255,205,86,1)`][i],
+                    pointBackgroundColor: 'white'
+                };
+            })
+        },
+        options: {
+            scales: { r: { suggestedMin: 0, suggestedMax: 1 } },
+            responsive: true
+        }
+    });
+}
+
+// =======================
+// 导出PDF报告
+// =======================
+function exportPDF() {
+    if (!resultData || resultData.length === 0) {
+        alert("请先运行分析！");
+        return;
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFontSize(20);
+    doc.text("临沂市公立医院医疗服务质量评价报告", 105, 20, { align: "center" });
+    doc.setFontSize(12);
+    doc.text(`生成日期：${new Date().toLocaleDateString()}`, 140, 30);
+
+    // 表格
+    const tableData = resultData.map(r => [
+        r.hospital,
+        r.di_plus.toFixed(4),
+        r.di_minus.toFixed(4),
+        r.ci.toFixed(3),
+        r.rank
+    ]);
+    doc.autoTable({
+        head: [['医院', 'di⁺', 'di⁻', 'Ci', '排名']],
+        body: tableData,
+        startY: 40
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 10;
+    doc.setFontSize(10);
+    doc.text("注：采用TOPSIS+熵权法模型，基于14项核心指标综合测算。", 10, finalY);
+    doc.text("Ci值越接近1表示整体服务质量越高。", 10, finalY + 5);
+
+    doc.save(`医疗服务质量TOPSIS评价_${new Date().getTime()}.pdf`);
+}
+
+// =======================
+// 🔗 将当前数据导出为可分享的链接
+// =======================
+function exportToUrl() {
+    const table = document.getElementById("inputTable");
+    const data = [];
+
+    for (let i = 1; i < table.rows.length; i++) {
+        const row = table.rows[i];
+        const rowData = [];
+        for (let j = 0; j < row.cells.length; j++) {
+            rowData.push(row.cells[j].textContent.trim());
+        }
+        data.push(rowData);
+    }
+
+    const jsonStr = JSON.stringify(data);
+    const compressed = LZString.compressToEncodedURIComponent(jsonStr);
+
+    const baseUrl = window.location.href.split('?')[0];
+    const url = new URL(baseUrl);
+    url.searchParams.set('data', compressed);
+
+    navigator.clipboard.writeText(url.toString())
+        .then(() => {
+            alert("✅ 当前数据已生成链接并复制到剪贴板！\n\n任何人打开此链接都能看到相同内容！");
+        })
+        .catch(err => {
+            const msg = "🔗 请手动复制以下链接分享：\n\n" + url.toString();
+            prompt("分享链接已生成", url.toString());
+        });
+
+    window.history.replaceState({}, '', url);
+}
+
+// =======================
+// 📥 从URL加载数据（页面加载时调用）
+// =======================
+window.addEventListener('load', function () {
+    importFromUrl();
+});
+
+function importFromUrl() {
+    const url = new URL(window.location);
+    const param = url.searchParams.get('data');
+    if (!param) return;
+
+    try {
+        const jsonStr = LZString.decompressFromEncodedURIComponent(param);
+        const data = JSON.parse(jsonStr);
+
+        const tbody = document.querySelector("#inputTable tbody");
+        tbody.innerHTML = "";
+
+        data.forEach(row => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = row.map(cell => 
+                `<td contenteditable="true">${cell}</td>`
+            ).join("");
+            tbody.appendChild(tr);
+        });
+
+        console.log("✅ 已从URL恢复数据");
+        alert("📊 已从链接恢复数据！点击【自动计算】即可重现分析结果");
+
+    } catch (e) {
+        console.error("❌ 无法解析URL中的数据", e);
+        alert("⚠️ 无法恢复链接中的数据，请检查是否为有效链接。");
+    }
+}
+</script>
+
+</body>
+</html>
